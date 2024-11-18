@@ -1,0 +1,99 @@
+import cv2
+import numpy as np
+
+# Global variables
+drawing = False
+points = []  # To store the points of the drawing
+
+# Mouse callback function to capture freehand drawing
+def draw_freehand(event, x, y, flags, param):
+    global drawing, points, img
+
+    if event == cv2.EVENT_LBUTTONDOWN:
+        # Start drawing
+        drawing = True
+        points = [(x, y)]
+    
+    elif event == cv2.EVENT_MOUSEMOVE:
+        if drawing:
+            # Continue drawing
+            points.append((x, y))
+            cv2.line(img, (points[-2][0], points[-2][1]), (x, y), (0, 0, 0), 2)  # Draw line segments
+            cv2.imshow("Draw Freehand", img)
+    
+    elif event == cv2.EVENT_LBUTTONUP:
+        # Finish drawing
+        drawing = False
+        points.append((x, y))
+        cv2.line(img, (points[-2][0], points[-2][1]), (x, y), (0, 0, 0), 2)
+        cv2.imshow("Draw Freehand", img)
+        print("Drawing complete. Analyzing shape...")
+
+        # Check the "circle-ness" of the shape
+        check_circle(points)
+
+# Function to check how close the drawn shape is to a perfect circle
+def check_circle(points):
+    global img
+
+    # Convert points to a NumPy array for processing
+    points_array = np.array(points, dtype=np.int32)
+    
+    # Find the convex hull of the points
+    hull = cv2.convexHull(points_array)
+    
+    # Fit an enclosing circle to the points
+    (x, y), radius = cv2.minEnclosingCircle(hull)
+    center = (int(x), int(y))
+    radius = int(radius)
+    
+    # Draw the enclosing circle on the image
+    img_copy = img.copy()
+    cv2.circle(img_copy, center, radius, (255, 0, 0), 2)
+    cv2.imshow("Circle Fitting", img_copy)
+    
+    # Calculate the distances from the center to each point
+    distances = []
+    for point in points:
+        dist = np.linalg.norm(np.array(point) - np.array(center))
+        distances.append(dist)
+    
+    # Calculate the average and standard deviation of the distances
+    avg_distance = np.mean(distances)
+    std_dev = np.std(distances)
+    
+    # Calculate the ratio of standard deviation to the average distance
+    # A perfect circle will have a very small std_dev compared to avg_distance
+    deviation_ratio = std_dev / avg_distance if avg_distance != 0 else 0
+    
+    # A small deviation ratio indicates a perfect circle
+    perfection_score = max(0, 100 - deviation_ratio * 500)  # 500 as a sensitivity factor
+    
+    # If max deviation is larger than radius, it’s far from a circle
+    max_distance = max(distances)
+    if max_distance > radius * 1.5:  # Tolerance for max deviation (150% of the radius)
+        perfection_score -= 20  # Deduct more for large deviations
+    
+    perfection_score = max(0, perfection_score)  # Ensure score is not negative
+    print(f"Circle-ness Perfection Score: {perfection_score:.2f}%")
+    
+    if perfection_score == 100:
+        print("Perfect circle!")
+    else:
+        print(f"The drawn shape is {100 - perfection_score:.2f}% imperfect.")
+
+# Initialize a blank image for drawing
+img = np.ones((500, 500, 3), dtype=np.uint8) * 255
+
+# Display the drawing window
+cv2.imshow("Draw Freehand", img)
+
+# Set up the mouse callback function for drawing
+cv2.setMouseCallback("Draw Freehand", draw_freehand)
+
+# Wait for the user to finish drawing and then submit
+print("Draw freely and release the mouse button to submit.")
+cv2.waitKey(0)  # Wait until the user finishes drawing
+
+# Close the OpenCV window
+cv2.destroyAllWindows()
