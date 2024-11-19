@@ -3,97 +3,121 @@ import numpy as np
 
 # Global variables
 drawing = False
-points = []  # To store the points of the drawing
+points = []
+color = (0, 0, 0)  # Default line color
+thickness = 2  # Default line thickness
+img = np.ones((500, 500, 3), dtype=np.uint8) * 255  # Blank canvas
 
-# Mouse callback function to capture freehand drawing
+# Mouse callback function
 def draw_freehand(event, x, y, flags, param):
     global drawing, points, img
 
     if event == cv2.EVENT_LBUTTONDOWN:
-        # Start drawing
         drawing = True
         points = [(x, y)]
-    
     elif event == cv2.EVENT_MOUSEMOVE:
         if drawing:
-            # Continue drawing
             points.append((x, y))
-            cv2.line(img, (points[-2][0], points[-2][1]), (x, y), (0, 0, 0), 2)  # Draw line segments
+            cv2.line(img, points[-2], (x, y), color, thickness)
             cv2.imshow("Draw Freehand", img)
-    
     elif event == cv2.EVENT_LBUTTONUP:
-        # Finish drawing
         drawing = False
         points.append((x, y))
-        cv2.line(img, (points[-2][0], points[-2][1]), (x, y), (0, 0, 0), 2)
-        cv2.imshow("Draw Freehand", img)
+        cv2.line(img, points[-2], (x, y), color, thickness)
         print("Drawing complete. Analyzing shape...")
+        perfection_score = analyze_shape(points)
+        display_results(perfection_score)
 
-        # Check the "circle-ness" of the shape
-        check_circle(points)
-
-# Function to check how close the drawn shape is to a perfect circle
-def check_circle(points):
-    global img
-
-    # Convert points to a NumPy array for processing
+# Analyze the shape and calculate "circle-ness"
+def analyze_shape(points):
     points_array = np.array(points, dtype=np.int32)
-    
-    # Find the convex hull of the points
     hull = cv2.convexHull(points_array)
-    
-    # Fit an enclosing circle to the points
     (x, y), radius = cv2.minEnclosingCircle(hull)
     center = (int(x), int(y))
     radius = int(radius)
-    
-    # Draw the enclosing circle on the image
-    img_copy = img.copy()
-    cv2.circle(img_copy, center, radius, (255, 0, 0), 2)
-    cv2.imshow("Circle Fitting", img_copy)
-    
-    # Calculate the distances from the center to each point
-    distances = []
-    for point in points:
-        dist = np.linalg.norm(np.array(point) - np.array(center))
-        distances.append(dist)
-    
-    # Calculate the average and standard deviation of the distances
+
+    # Draw the enclosing circle
+    cv2.circle(img, center, radius, (255, 0, 0), 2)
+
+    distances = [np.linalg.norm(np.array(p) - np.array(center)) for p in points]
     avg_distance = np.mean(distances)
     std_dev = np.std(distances)
-    
-    # Calculate the ratio of standard deviation to the average distance
-    # A perfect circle will have a very small std_dev compared to avg_distance
     deviation_ratio = std_dev / avg_distance if avg_distance != 0 else 0
-    
-    # A small deviation ratio indicates a perfect circle
-    perfection_score = max(0, 100 - deviation_ratio * 500)  # 500 as a sensitivity factor
-    
-    # If max deviation is larger than radius, it’s far from a circle
-    max_distance = max(distances)
-    if max_distance > radius * 1.5:  # Tolerance for max deviation (150% of the radius)
-        perfection_score -= 20  # Deduct more for large deviations
-    
-    perfection_score = max(0, perfection_score)  # Ensure score is not negative
+    perfection_score = max(0, 100 - deviation_ratio * 500)
+
     print(f"Circle-ness Perfection Score: {perfection_score:.2f}%")
-    
     if perfection_score == 100:
         print("Perfect circle!")
     else:
         print(f"The drawn shape is {100 - perfection_score:.2f}% imperfect.")
+    
+    return perfection_score
 
-# Initialize a blank image for drawing
-img = np.ones((500, 500, 3), dtype=np.uint8) * 255
+# Display the results on the canvas
+def display_results(perfection_score):
+    result_text = f"Circle-ness: {perfection_score:.1f}%"
+    color = (0, 255, 0) if perfection_score > 80 else (0, 0, 255)  # Green for good, Red for poor
+    cv2.putText(img, result_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+    cv2.imshow("Draw Freehand", img)
 
-# Display the drawing window
+# Save the drawing
+def save_drawing():
+    cv2.imwrite("drawing.png", img)
+    print("Drawing saved as 'drawing.png'.")
+
+# Load a saved drawing
+def load_drawing():
+    global img
+    try:
+        img = cv2.imread("drawing.png")
+        if img is None:
+            raise FileNotFoundError("Image file not found.")
+        print("Drawing loaded from 'drawing.png'.")
+        cv2.imshow("Draw Freehand", img)
+    except Exception as e:
+        print(f"Failed to load drawing: {e}")
+
+# Reset the canvas
+def reset_canvas():
+    global img
+    img = np.ones((500, 500, 3), dtype=np.uint8) * 255
+    print("Canvas reset.")
+    cv2.imshow("Draw Freehand", img)
+
+# Keyboard controls
+def keyboard_controls(key):
+    global color, thickness
+    if key == ord('s'):
+        save_drawing()
+    elif key == ord('l'):
+        load_drawing()
+    elif key == ord('r'):
+        reset_canvas()
+    elif key == ord('c'):
+        color = (0, 255, 0) if color == (0, 0, 0) else (0, 0, 0)
+        print(f"Color changed to: {'Green' if color == (0, 255, 0) else 'Black'}.")
+    elif key == ord('+'):
+        thickness += 1
+        print(f"Line thickness increased to: {thickness}.")
+    elif key == ord('-'):
+        thickness = max(1, thickness - 1)
+        print(f"Line thickness decreased to: {thickness}.")
+
+# Main application
 cv2.imshow("Draw Freehand", img)
-
-# Set up the mouse callback function for drawing
 cv2.setMouseCallback("Draw Freehand", draw_freehand)
+print("Instructions:")
+print("- Draw freely with the left mouse button.")
+print("- Press 's' to save the drawing.")
+print("- Press 'l' to load a saved drawing.")
+print("- Press 'r' to reset the canvas.")
+print("- Press 'c' to toggle color between black and green.")
+print("- Press '+' or '-' to adjust line thickness.")
 
-# Wait for the user to finish drawing and then submit
-print("Draw freely and release the mouse button to submit.")
-cv2.waitKey(0)  # Wait until the user finishes drawing
+while True:
+    key = cv2.waitKey(1) & 0xFF
+    if key == 27:  # ESC key to exit
+        break
+    keyboard_controls(key)
 
-# Close the OpenCV window
 cv2.destroyAllWindows()
